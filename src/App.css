@@ -1,0 +1,40 @@
+#root {
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
+}
+
+header {
+  padding: 15px 20px;
+  font-size: 20px;
+  color: #fff;
+  background-color: #018786;
+}
+
+main {
+  display: flex;
+  flex: auto;
+}
+
+aside {
+  width: 25vw;
+  min-width: 300px;
+  max-width: 400px;
+  background-color: #03dac6;
+}
+
+section {
+  display: flex;
+  flex: auto;
+  flex-direction: column;
+}
+
+article {
+  display: flex;
+  flex-direction: column;
+  height: 50%;
+}
+
+article .stream_wrapper {
+  height: 100%;
+}
