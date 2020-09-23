@@ -27,6 +27,7 @@ section {
   display: flex;
   flex: auto;
   flex-direction: column;
+  overflow: auto;
 }
 
 .stream_wrapper {
