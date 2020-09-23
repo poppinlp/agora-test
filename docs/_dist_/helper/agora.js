@@ -2,6 +2,13 @@ import AgoraRTC from '../../web_modules/agora-rtc-sdk.js';
 import { promisify, log } from './util.js';
 import { FIELD_AUDIO_INPUT, FIELD_VIDEO_INPUT } from './constraint.js';
 export async function getDevices() {
+  // This is a tricky way to trigger permission granted to get device id
+  const tmpStream = AgoraRTC.createStream({
+    audio: true,
+    video: true
+  });
+  const pStreamInit = promisify(tmpStream.init);
+  await pStreamInit();
   const pGetDevices = promisify(AgoraRTC.getDevices);
   const devices = await pGetDevices();
   const cameras = [];
@@ -20,6 +27,7 @@ export async function getDevices() {
       value: id
     });
   });
+  tmpStream.close();
   return {
     cameras,
     mics
@@ -54,7 +62,7 @@ async function initClient(data) {
       uid
     };
   } catch (err) {
-    throw `init client failed: ${err.message}`;
+    throw `init client failed: ${err.msg}`;
   }
 }
 
@@ -73,7 +81,7 @@ async function initLocalStream(data) {
     log('init local stream success');
     return localStream;
   } catch (err) {
-    throw `init local stream failed: ${err.message}`;
+    throw `init local stream failed: ${err.msg}`;
   }
 }
 
@@ -84,6 +92,7 @@ export async function join(data) {
     uid
   } = await initClient(data);
   const localStream = await initLocalStream(data);
+  publish(client, localStream);
   log('join end');
   return {
     client,

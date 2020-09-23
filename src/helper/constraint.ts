@@ -1,7 +1,6 @@
 export const APPID = '78dfd6ed076849a8a67e7eb1e10af5a7';
 export const CHANNEL = 'poppinl-test';
-export const TEMP_TOKEN =
-  '00678dfd6ed076849a8a67e7eb1e10af5a7IACScR7d5rzAjz2eQYX8dmiz97u9oKBk01RBHihUZhWs8oRqKDEAAAAAEAAQz9mbNHhrXwEAAQA0eGtf';
+export const TEMP_TOKEN = '00678dfd6ed076849a8a67e7eb1e10af5a7IADkdP5Z6EyIeolf92dSZ9Birryh0nXOlHI5x1HG0Dcx1IRqKDEAAAAAEAAShR76UWRsXwEAAQBQZGxf';
 
 export const FIELD_AUDIO_INPUT = 'audioinput';
 export const FIELD_VIDEO_INPUT = 'videoinput';

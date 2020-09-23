@@ -9,6 +9,11 @@ export async function getDevices(): Promise<{
   cameras: Array<SelectOption>;
   mics: Array<SelectOption>;
 }> {
+  // This is a tricky way to trigger permission granted to get device id
+  const tmpStream: AgoraRTC.Stream = AgoraRTC.createStream({ audio: true, video: true });
+  const pStreamInit = promisify(tmpStream.init);
+  await pStreamInit();
+
   const pGetDevices = promisify(AgoraRTC.getDevices);
   const devices = await pGetDevices();
   const cameras: Array<SelectOption> = [];
@@ -30,6 +35,8 @@ export async function getDevices(): Promise<{
       value: id,
     });
   });
+
+  tmpStream.close();
 
   return { cameras, mics };
 }
@@ -66,7 +73,7 @@ async function initClient(
 
     return { client, uid };
   } catch (err) {
-    throw `init client failed: ${err.message}`;
+    throw `init client failed: ${err.msg}`;
   }
 }
 
@@ -87,7 +94,7 @@ async function initLocalStream(data: RTCData): Promise<AgoraRTC.Stream> {
 
     return localStream;
   } catch (err) {
-    throw `init local stream failed: ${err.message}`;
+    throw `init local stream failed: ${err.msg}`;
   }
 }
 
@@ -101,6 +108,7 @@ export async function join(
   log('join start');
   const { client, uid } = await initClient(data);
   const localStream = await initLocalStream(data);
+  publish(client, localStream);
   log('join end');
   return { client, uid, localStream };
 }
