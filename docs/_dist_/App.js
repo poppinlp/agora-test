@@ -160,26 +160,45 @@ function App({}) {
         stream
       } = e;
       log('on stream subscribed');
-      updateState(setRtc, prevRtc => {
-        return { ...prevRtc,
-          remoteStreams: [...prevRtc.remoteStreams, stream]
-        };
-      });
+      updateState(setRtc, prevRtc => ({ ...prevRtc,
+        remoteStreams: [...prevRtc.remoteStreams, stream]
+      }));
     });
     client.on('stream-added', e => {
       log('on stream added');
+      const {
+        stream
+      } = e;
+      const id = stream.getId();
+      if (id === rtcData.uid) return;
+      client.subscribe(stream);
     });
     client.on('stream-removed', e => {
       log('on stream removed');
+      const {
+        stream
+      } = e;
+      const id = stream.getId();
+      stream.isPlaying() && stream.stop();
+      updateState(setRtc, prevRtc => ({ ...prevRtc,
+        remoteStreams: prevRtc.remoteStreams.filter(stream => stream.getId() !== id)
+      }));
     });
     client.on('peer-leave', e => {
       log('on peer leave');
+      const id = e.uid;
+      const peerStream = rtc.remoteStreams.find(stream => id === stream.getId());
+      peerStream && peerStream.isPlaying() && peerStream.stop();
+      updateState(setRtc, prevRtc => ({ ...prevRtc,
+        remoteStreams: prevRtc.remoteStreams.filter(stream => stream.getId() !== id)
+      }));
     });
   }
 
   async function onJoin() {
     try {
       validate(rtcData);
+      log('on join', rtcData);
       updateState(setRtc, {
         loading: true
       });

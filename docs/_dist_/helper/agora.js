@@ -47,7 +47,7 @@ async function initClient(data) {
     await pInit(data.appId);
     log('init client succ');
     const pJoin = promisify(client.join);
-    const uid = await pJoin(data.token, data.channel, data.uid);
+    const uid = await pJoin(data.token, data.channel, +data.uid);
     log('join channel succ');
     return {
       client,
