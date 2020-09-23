@@ -5,8 +5,8 @@ export const TEMP_TOKEN =
 
 export const FIELD_AUDIO_INPUT = 'audioinput';
 export const FIELD_VIDEO_INPUT = 'videoinput';
-export const ELEMENT_LOCAL_STREAM = 'local_stream';
-export const ELEMENT_REMOTE_STREAM = 'remote_stream';
+export const ELEMENT_LOCAL_STREAM_PREFIX = 'local_stream_';
+export const ELEMENT_REMOTE_STREAM_PREFIX = 'remote_stream_';
 
 export const RESOLUTIONS = [
   { name: 'default', value: 'default' },
@@ -20,6 +20,6 @@ export const MODES = [
   { name: 'rtc', value: 'rtc' },
 ];
 
-export const DEFAULT_UID = 0;
+export const DEFAULT_UID = '0';
 export const DEFAULT_MODE = MODES[0].name;
 export const DEFAULT_RESOLUTION = RESOLUTIONS[0].name;

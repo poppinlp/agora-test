@@ -1,13 +1,30 @@
 import React, { useState, useEffect, SyntheticEvent } from 'react';
-import AgoraRTC from 'agora-rtc-sdk';
-import { getDevices, getCodecs} from './agora';
+import TextInput from './components/TextInput';
+import SelectInput from './components/SelectInput';
+import RadioInput from './components/RadioInput';
+import StreamPlayer from './components/StreamPlayer';
+import {
+  getDevices,
+  getCodecs,
+  join,
+  leave,
+  publish,
+  unpublish,
+} from './helper/agora';
 import {
   makeDefaultRtc,
   makeDefaultRtcData,
   makeDefaultRtcOptions,
-  promisify,
   updateState,
-} from './util';
+  validate,
+  showError,
+  log,
+  promisify,
+} from './helper/util';
+import {
+  ELEMENT_LOCAL_STREAM_PREFIX,
+  ELEMENT_REMOTE_STREAM_PREFIX,
+} from './helper/constraint';
 import './App.css';
 
 function App({}: AppProps) {
@@ -15,13 +32,117 @@ function App({}: AppProps) {
   const [rtcData, setRtcData] = useState(makeDefaultRtcData());
   const [rtcOpts, setRtcOpts] = useState(makeDefaultRtcOptions());
 
+  const textFields = [
+    { title: 'App ID', key: 'appId' },
+    { title: 'Channel', key: 'channel' },
+    { title: 'Token', key: 'token' },
+    { title: 'UID', key: 'uid' },
+  ];
+  const selectFields = [
+    { title: 'Camera', key: 'camera', options: 'cameras' },
+    { title: 'Mic', key: 'mic', options: 'mics' },
+    { title: 'Camera Resolution', key: 'resolution', options: 'resolutions' },
+  ];
+  const radioFields = [
+    { title: 'Mode', key: 'mode', options: 'modes' },
+    { title: 'Codec', key: 'codec', options: 'codecs' },
+  ];
+  const buttons = [
+    { text: 'JOIN', onClick: onJoin, disabled: rtc.loading || rtc.joined },
+    {
+      text: 'LEAVE',
+      onClick: onLeave,
+      disabled: rtc.loading || !rtc.client || !rtc.joined,
+    },
+    {
+      text: 'PUBLISH',
+      onClick: onPublish,
+      disabled: rtc.loading || !rtc.client || rtc.published,
+    },
+    {
+      text: 'UNPUBLISH',
+      onClick: onUnpublish,
+      disabled: rtc.loading || !rtc.client || !rtc.published,
+    },
+  ];
+
   useEffect(() => {
     initData();
   }, []);
 
   useEffect(() => {
-    console.log('useEffect', rtc, rtcOpts);
-  });
+    if (!rtc.localStream) return;
+    const id = ELEMENT_LOCAL_STREAM_PREFIX + rtc.localStream.getId();
+    rtc.localStream.play(id);
+  }, [rtc.localStream]);
+
+  useEffect(() => {
+    rtc.remoteStreams.forEach(stream => {
+      const id = ELEMENT_REMOTE_STREAM_PREFIX + stream.getId();
+      stream.play(id);
+    });
+  }, [rtc.remoteStreams]);
+
+  return (
+    <>
+      <header>Agora React Demo</header>
+      <main>
+        <aside>
+          <form onSubmit={(e) => e.preventDefault()}>
+            {textFields.map((field) => (
+              <TextInput
+                key={field.title}
+                title={field.title}
+                updater={setRtcData}
+                dataKey={field.key}
+                placeholder={rtcData[field.key]}
+              />
+            ))}
+            {selectFields.map((field) => (
+              <SelectInput
+                key={field.title}
+                title={field.title}
+                updater={setRtcData}
+                dataKey={field.key}
+                options={rtcOpts[field.options]}
+              />
+            ))}
+            {radioFields.map((field) => (
+              <RadioInput
+                key={field.title}
+                title={field.title}
+                updater={setRtcData}
+                dataKey={field.key}
+                options={rtcOpts[field.options]}
+                current={rtcData[field.key]}
+              />
+            ))}
+            {buttons.map((button) => (
+              <button
+                onClick={button.onClick}
+                disabled={button.disabled}
+                key={button.text}
+              >
+                {button.text}
+              </button>
+            ))}
+          </form>
+        </aside>
+        <section>
+          <StreamPlayer
+            title="Local Stream"
+            prefix={ELEMENT_LOCAL_STREAM_PREFIX}
+            streams={[rtc.localStream]}
+          />
+          <StreamPlayer
+            title="Remote Stream"
+            prefix={ELEMENT_REMOTE_STREAM_PREFIX}
+            streams={rtc.remoteStreams}
+          />
+        </section>
+      </main>
+    </>
+  );
 
   async function initData() {
     try {
@@ -30,354 +151,125 @@ function App({}: AppProps) {
         getCodecs(),
       ]);
       updateState(setRtcOpts, {
-        cameras, mics, codecs
+        cameras,
+        mics,
+        codecs,
       });
       updateState(setRtcData, {
-        codec: codecs[0].name
+        codec: codecs[0].name,
+        camera: cameras[0].value,
+        mic: mics[0].value,
       });
     } catch (err) {
-      alert(`fetch devices info error: ${err}`);
+      showError(`fetch devices info error: ${err}`);
     }
   }
 
-  async function initClient(opts: RTCOptions): Promise<void> {
-    try {
-      const client = AgoraRTC.createClient({
-        mode: opts.mode,
-        codec: opts.codec,
-      });
-      const pInit = promisify(client.init);
-
-      await pInit(opts.appId);
-      console.log('init client succ');
-
-      const pJoin = promisify(client.join);
-      const uid = await pJoin(opts.token, opts.channel, opts.uid);
-      console.log('join channel succ');
-
-      setRtc((rtc) => ({ ...rtc, client, joined: true }));
-      setRtcOpts((rtcOpts) => ({ ...rtcOpts, uid }));
-    } catch (err) {
-      alert(`init client failed: ${err}`);
-    }
-  }
-
-  async function initLocalStream(opts: RTCOptions): Promise<void> {
-    try {
-      const localStream: AgoraRTC.Stream = AgoraRTC.createStream({
-        streamID: opts.uid,
-        audio: true,
-        video: true,
-        screen: false,
-        microphoneId: opts.mic,
-        cameraId: opts.camera,
-      });
-      const pStreamInit = promisify(localStream.init);
-
-      await pStreamInit();
-      console.log('init local stream success');
-
-      setRtc(rtc => ({...rtc, localStream}));
-      localStream.play(ELEMENT_LOCAL_STREAM);
-    } catch (err) {
-      alert(`init local stream failed: ${err}`);
-    }
-  }
-
-  async function publish(rtc: RTC): Promise<void> {
-    try {
-      if (!rtc.client) {
-        alert('Please join channel first');
-        return;
-      }
-      if (rtc.published) {
-        alert('Published already');
-        return;
-      }
-
-      const pPublish = promisify(rtc.client.publish);
-      await publish(rtc.localStream);
-      console.log('publish succ');
-      setRtc((rtc) => ({ ...rtc, publish: true }));
-    } catch (err) {
-      alert(`publish failed: ${err}`);
-    }
-  }
-
-  async function unpublish(rtc: RTC): Promise<void> {
-    try {
-      if (!rtc.client) {
-        alert("Please join channel first")
-        return
-      }
-      if (!rtc.published) {
-        alert("Haven't published");
-        return
-      }
-
-      const pUnpublish = promisify(rtc.client.unpublish);
-      await pUnpublish(rtc.localStream);
-      console.log("unpublish succ")
-      setRtc((rtc) => ({ ...rtc, publish: false }));
-    } catch (err) {
-      alert(`unpublish failed: ${err}`);
-    }
-  }
-
-  async function leave(rtc: RTC): Promise<void> {
-    try {
-      if (!rtc.client) {
-        alert("Please join channel first")
-        return
-      }
-      if (!rtc.joined) {
-        alert("You are not in channel")
-        return
-      }
-
-      const pLeave = promisify(rtc.client.leave);
-      await pLeave();
-      rtc.localStream.isPlaying() && rtc.localStream.stop();
-      rtc.localStream.close();
-
-      rtc.remoteStreams.forEach(remoteStream => {
-        remoteStream.isPlaying() && remoteStream.stop();
-        // removeRemoteView(remoteStream.getId());
-      });
-
-      setRtc((rtc) => ({
-        ...rtc,
-        localStream: null,
-        remoteStreams: [],
-        client: null,
-        published: false,
-        joined: false,
+  function bindClientEvent(client: AgoraRTC.Client) {
+    client.on('error', (err) => {
+      showError(`client error: ${err}`);
+      updateState(setRtc, { loading: false });
+    });
+    client.on('stream-published', () => {
+      updateState(setRtc, { published: true, loading: false });
+      log('publish succ');
+    });
+    client.on('stream-unpublished', () => {
+      updateState(setRtc, { published: false, loading: false });
+      log('unpublish succ');
+    });
+    client.on('stream-subscribed', (e) => {
+      const { stream } = e;
+      log('on stream subscribed');
+      updateState(setRtc, (prevRtc: RTC) => ({
+        ...prevRtc,
+        remoteStreams: [...prevRtc.remoteStreams, stream],
       }));
-      console.log("leave success")
-    } catch (err) {
-      alert(`leave failed: ${err}`);
-    }
+    });
+    client.on('stream-added', (e) => {
+      log('on stream added');
+      const { stream } = e;
+      const id = stream.getId();
+      if (id === rtcData.uid) return;
+      client.subscribe(stream);
+    });
+    client.on('stream-removed', (e) => {
+      log('on stream removed');
+      const { stream } = e;
+      const id = stream.getId();
+      stream.isPlaying() && stream.stop();
+      updateState(setRtc, (prevRtc: RTC) => ({
+        ...prevRtc,
+        remoteStreams: prevRtc.remoteStreams.filter(
+          (stream) => stream.getId() !== id,
+        ),
+      }));
+    });
+    client.on('peer-leave', (e) => {
+      log('on peer leave');
+      const id = e.uid;
+      const peerStream = rtc.remoteStreams.find(stream => id === stream.getId());
+      peerStream && peerStream.isPlaying() && peerStream.stop()
+      updateState(setRtc, (prevRtc: RTC) => ({
+        ...prevRtc,
+        remoteStreams: prevRtc.remoteStreams.filter(
+          (stream) => stream.getId() !== id,
+        ),
+      }));
+    });
   }
 
-  function validate(data: any, fields: Array<string>): string | boolean {
-    for (const field of fields) {
-      if (data[field] === undefined || data[field] === '') {
-        return `${field} should not be empty`;
-      }
-    }
-    return false;
-  }
-
-  async function join(rtc: RTC, opts: RTCOptions): Promise<void> {
-    if (rtc.joined) {
-      alert('Already joined');
-      return;
-    }
-    const fields = ['appId', 'channel', 'token', 'uid', 'mode', 'codec', 'camera', 'mic', 'resolution'];
-    const msg = validate(opts, fields);
-    if (msg) {
-      alert(msg);
-      return;
-    }
-
+  async function onJoin() {
     try {
-      await initClient(opts);
-      await initLocalStream(opts);
-      await publish(rtc);
+      validate(rtcData);
+      log('on join', rtcData);
+      updateState(setRtc, { loading: true });
+      const { client, uid, localStream } = await join(rtcData);
+      bindClientEvent(client);
+      updateState(setRtc, {
+        client,
+        localStream,
+        joined: true,
+        loading: false,
+      });
+      updateState(setRtcData, { uid });
     } catch (err) {
-      alert(`unknow error: ${err}`);
+      showError(`join failed: ${err}`);
+      updateState(setRtc, { loading: false });
     }
   }
 
-  return (
-    <>
-      <header>Agora Demo</header>
-      <main>
-        <aside>
-          <form onSubmit={(e) => e.preventDefault()}>
-            <fieldset>
-              <legend>App ID</legend>
-              <input
-                type="text"
-                placeholder={APPID}
-                onChange={(e) => {
-                  setRtcOpts((rtcOpts) => ({
-                    ...rtcOpts,
-                    appId: e.currentTarget.value,
-                  }));
-                }}
-              ></input>
-            </fieldset>
-            <fieldset>
-              <legend>Channel</legend>
-              <input
-                type="text"
-                placeholder={CHANNEL}
-                onChange={(e) => {
-                  setRtcOpts((rtcOpts) => ({
-                    ...rtcOpts,
-                    channel: e.currentTarget.value,
-                  }));
-                }}
-              ></input>
-            </fieldset>
-            <fieldset>
-              <legend>Token</legend>
-              <input
-                type="password"
-                placeholder={TEMP_TOKEN}
-                onChange={(e) => {
-                  setRtcOpts((rtcOpts) => ({
-                    ...rtcOpts,
-                    token: e.currentTarget.value,
-                  }));
-                }}
-              ></input>
-            </fieldset>
-            <fieldset>
-              <legend>UID</legend>
-              <input
-                type="number"
-                min="0"
-                max="10000"
-                step="1"
-                value={rtcOpts.uid}
-                onChange={(e) =>
-                  setRtcOpts((rtcOpts) => ({
-                    ...rtcOpts,
-                    uid: Number(e.currentTarget.value),
-                  }))
-                }
-              />
-            </fieldset>
-            <fieldset>
-              <legend>Camera</legend>
-              <select
-                onChange={(e) =>
-                  setRtcOpts((rtcOpts) => ({
-                    ...rtcOpts,
-                    camera: e.currentTarget.value,
-                  }))
-                }
-              >
-                {rtcOpts.cameras.map((device, idx) => {
-                  const id = device.deviceId || device.groupId;
-                  const name = device.label || `mic-${idx}`;
-                  return (
-                    <option key={id} value={id}>
-                      {name}
-                    </option>
-                  );
-                })}
-              </select>
-            </fieldset>
-            <fieldset>
-              <legend>Mic</legend>
-              <select
-                onChange={(e) =>
-                  setRtcOpts((rtcOpts) => ({
-                    ...rtcOpts,
-                    mic: e.currentTarget.value,
-                  }))
-                }
-              >
-                {rtcOpts.mics.map((device, idx) => {
-                  const id = device.deviceId || device.groupId;
-                  const name = device.label || `mic-${idx}`;
-                  return (
-                    <option key={id} value={id}>
-                      {name}
-                    </option>
-                  );
-                })}
-              </select>
-            </fieldset>
-            <fieldset>
-              <legend>Camera Resolution</legend>
-              <select
-                onChange={(e) =>
-                  setRtcOpts((rtcOpts) => ({
-                    ...rtcOpts,
-                    resolution: e.currentTarget.value,
-                  }))
-                }
-              >
-                {rtcOpts.resolutions.map((resolution) => (
-                  <option key={resolution.value} value={resolution.value}>
-                    {resolution.name}
-                  </option>
-                ))}
-              </select>
-            </fieldset>
-            <fieldset>
-              <legend>Mode</legend>
-              {rtcOpts.modes.map((mode) => {
-                const name = `mode-${mode.name}`;
-                const checked = mode.name === rtcOpts.mode;
-                return (
-                  <span key={name}>
-                    <input
-                      type="radio"
-                      name="mode"
-                      value={mode.value}
-                      id={name}
-                      checked={checked}
-                      onChange={(e) =>
-                        setRtcOpts((rtcOpts) => ({
-                          ...rtcOpts,
-                          mode: e.currentTarget.value,
-                        }))
-                      }
-                    />
-                    <label htmlFor={name}>{mode.name}</label>
-                  </span>
-                );
-              })}
-            </fieldset>
-            <fieldset>
-              <legend>Codec</legend>
-              {rtcOpts.codecs.map((item) => {
-                const name = `codec-${item.name}`;
-                const checked = item.name === rtcOpts.codec;
-                return (
-                  <span key={name}>
-                    <input
-                      type="radio"
-                      name="codec"
-                      value={item.value}
-                      id={name}
-                      onChange={(e) =>
-                        setRtcOpts((rtcOpts) => ({
-                          ...rtcOpts,
-                          codec: e.currentTarget.value,
-                        }))
-                      }
-                      checked={checked}
-                    />
-                    <label htmlFor={name}>{item.name}</label>
-                  </span>
-                );
-              })}
-            </fieldset>
-            <button onClick={() => join(rtc, rtcOpts)}>JOIN</button>
-            <button onClick={() => leave(rtc)}>LEAVE</button>
-            <button onClick={() => publish(rtc)}>PUBLISH</button>
-            <button onClick={() => unpublish(rtc)}>UNPUBLISH</button>
-          </form>
-        </aside>
-        <section>
-          <article>
-            <h1>Local Stream</h1>
-            <div id={ELEMENT_LOCAL_STREAM} className="stream_wrapper"></div>
-          </article>
-          <article>
-            <h1>Remote Stream</h1>
-            <div id={ELEMENT_REMOTE_STREAM} className="stream_wrapper"></div>
-          </article>
-        </section>
-      </main>
-    </>
-  );
+  async function onLeave() {
+    try {
+      updateState(setRtc, { loading: true });
+      await leave(rtc);
+      updateState(setRtc, makeDefaultRtc);
+    } catch (err) {
+      showError(`leave failed: ${err}`);
+      updateState(setRtc, { loading: false });
+    }
+  }
+
+  async function onPublish() {
+    try {
+      updateState(setRtc, { loading: true });
+      await publish(rtc.client, rtc.localStream);
+    } catch (err) {
+      showError(`publish failed: ${err}`);
+    }
+  }
+
+  async function onUnpublish() {
+    try {
+      updateState(setRtc, { loading: true });
+      await unpublish(rtc.client, rtc.localStream);
+      updateState(setRtc, {
+        published: false,
+      });
+    } catch (err) {
+      showError(`unpublish failed: ${err}`);
+    }
+  }
 }
 
 export default App;
