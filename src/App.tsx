@@ -1,138 +1,46 @@
-import React, { useState, useEffect, FormEvent, SyntheticEvent } from 'react';
+import React, { useState, useEffect, SyntheticEvent } from 'react';
 import AgoraRTC from 'agora-rtc-sdk';
-import { promisify } from './util';
+import { getDevices, getCodecs} from './agora';
+import {
+  makeDefaultRtc,
+  makeDefaultRtcData,
+  makeDefaultRtcOptions,
+  promisify,
+  updateState,
+} from './util';
 import './App.css';
 
-interface AppProps {}
-
-interface SelectOption {
-  name: string;
-  value: string;
-}
-
-interface Device {
-  deviceId: string;
-  groupId: string;
-  kind: string;
-  label: string;
-}
-
-interface RTC {
-  client: AgoraRTC.Client | null;
-  localStream: AgoraRTC.Stream | null;
-  remoteStreams: Array<AgoraRTC.Stream>;
-  joined: boolean;
-  published: boolean;
-}
-
-interface RTCOptions {
-  appId: string;
-  channel: string;
-  token: string;
-  uid: number;
-  mode: string;
-  codec: string;
-  camera: string;
-  mic: string;
-  resolution: string;
-  modes: Array<SelectOption>;
-  codecs: Array<SelectOption>;
-  cameras: Array<Device>;
-  mics: Array<Device>;
-  resolutions: Array<SelectOption>;
-}
-
-const APPID = '78dfd6ed076849a8a67e7eb1e10af5a7';
-const CHANNEL = 'poppinl-test';
-const TEMP_TOKEN =
-  '00678dfd6ed076849a8a67e7eb1e10af5a7IACScR7d5rzAjz2eQYX8dmiz97u9oKBk01RBHihUZhWs8oRqKDEAAAAAEAAQz9mbNHhrXwEAAQA0eGtf';
-
-const FIELD_AUDIO_INPUT = 'audioinput';
-const FIELD_VIDEO_INPUT = 'videoinput';
-const ELEMENT_LOCAL_STREAM = 'local_stream';
-const ELEMENT_REMOTE_STREAM = 'remote_stream';
-
-const RESOLUTIONS = [
-  { name: 'default', value: 'default' },
-  { name: '480p', value: '480p' },
-  { name: '720p', value: '720p' },
-  { name: '1080p', value: '1080p' },
-];
-
-const MODES = [
-  { name: 'live', value: 'live' },
-  { name: 'rtc', value: 'rtc' },
-];
-
-const DEFAULT_UID = 0;
-const DEFAULT_MODE = MODES[0].name;
-const DEFAULT_RESOLUTION = RESOLUTIONS[0].name;
-
 function App({}: AppProps) {
-  const [rtc, setRTC] = useState({
-    client: null,
-    localStream: null,
-    remoteStreams: [],
-    joined: false,
-    published: false,
-  } as RTC);
-  const [rtcOpts, setRTCOpts] = useState({
-    appId: APPID,
-    channel: CHANNEL,
-    token: TEMP_TOKEN,
-    uid: DEFAULT_UID,
-    mode: DEFAULT_MODE,
-    codec: '',
-    camera: '',
-    mic: '',
-    resolution: DEFAULT_RESOLUTION,
-    modes: MODES,
-    codecs: [],
-    cameras: [],
-    mics: [],
-    resolutions: RESOLUTIONS,
-  } as RTCOptions);
+  const [rtc, setRtc] = useState(makeDefaultRtc());
+  const [rtcData, setRtcData] = useState(makeDefaultRtcData());
+  const [rtcOpts, setRtcOpts] = useState(makeDefaultRtcOptions());
 
   useEffect(() => {
-    // TODO: get device and codec
-    console.log('init effect');
-    window.AgoraRTC = AgoraRTC;
-
-    getDevices();
-    getCodecs();
+    initData();
   }, []);
 
   useEffect(() => {
     console.log('useEffect', rtc, rtcOpts);
   });
 
-  async function getDevices() {
-    const pGetDevices = promisify(AgoraRTC.getDevices);
-    const devices = await pGetDevices();
-    const cameras: Array<Device> = [];
-    const mics: Array<Device> = [];
-
-    devices.forEach((device: Device) => {
-      device.kind === FIELD_AUDIO_INPUT && mics.push(device);
-      device.kind === FIELD_VIDEO_INPUT && cameras.push(device);
-    });
-
-    setRTCOpts((rtcOpts) => ({ ...rtcOpts, cameras, mics }));
+  async function initData() {
+    try {
+      const [{ cameras, mics }, codecs] = await Promise.all([
+        getDevices(),
+        getCodecs(),
+      ]);
+      updateState(setRtcOpts, {
+        cameras, mics, codecs
+      });
+      updateState(setRtcData, {
+        codec: codecs[0].name
+      });
+    } catch (err) {
+      alert(`fetch devices info error: ${err}`);
+    }
   }
 
-  async function getCodecs() {
-    const allCodecs = await AgoraRTC.getSupportedCodec();
-    const codecs: Array<SelectOption> = allCodecs.video.map(
-      (codec: string) => ({
-        name: codec,
-        value: codec,
-      }),
-    );
-
-    setRTCOpts((rtcOpts) => ({ ...rtcOpts, codecs, codec: codecs[0].name }));
-  }
-
-  async function initClient(opts: RTCOptions) {
+  async function initClient(opts: RTCOptions): Promise<void> {
     try {
       const client = AgoraRTC.createClient({
         mode: opts.mode,
@@ -147,14 +55,14 @@ function App({}: AppProps) {
       const uid = await pJoin(opts.token, opts.channel, opts.uid);
       console.log('join channel succ');
 
-      setRTC((rtc) => ({ ...rtc, client, joined: true }));
-      setRTCOpts((rtcOpts) => ({ ...rtcOpts, uid }));
+      setRtc((rtc) => ({ ...rtc, client, joined: true }));
+      setRtcOpts((rtcOpts) => ({ ...rtcOpts, uid }));
     } catch (err) {
       alert(`init client failed: ${err}`);
     }
   }
 
-  async function initLocalStream(opts: RTCOptions) {
+  async function initLocalStream(opts: RTCOptions): Promise<void> {
     try {
       const localStream: AgoraRTC.Stream = AgoraRTC.createStream({
         streamID: opts.uid,
@@ -169,14 +77,14 @@ function App({}: AppProps) {
       await pStreamInit();
       console.log('init local stream success');
 
-      setRTC(rtc => ({...rtc, localStream}));
+      setRtc(rtc => ({...rtc, localStream}));
       localStream.play(ELEMENT_LOCAL_STREAM);
     } catch (err) {
       alert(`init local stream failed: ${err}`);
     }
   }
 
-  async function publish(rtc: RTC) {
+  async function publish(rtc: RTC): Promise<void> {
     try {
       if (!rtc.client) {
         alert('Please join channel first');
@@ -190,13 +98,13 @@ function App({}: AppProps) {
       const pPublish = promisify(rtc.client.publish);
       await publish(rtc.localStream);
       console.log('publish succ');
-      setRTC((rtc) => ({ ...rtc, publish: true }));
+      setRtc((rtc) => ({ ...rtc, publish: true }));
     } catch (err) {
       alert(`publish failed: ${err}`);
     }
   }
 
-  async function unpublish(rtc: RTC) {
+  async function unpublish(rtc: RTC): Promise<void> {
     try {
       if (!rtc.client) {
         alert("Please join channel first")
@@ -210,13 +118,13 @@ function App({}: AppProps) {
       const pUnpublish = promisify(rtc.client.unpublish);
       await pUnpublish(rtc.localStream);
       console.log("unpublish succ")
-      setRTC((rtc) => ({ ...rtc, publish: false }));
+      setRtc((rtc) => ({ ...rtc, publish: false }));
     } catch (err) {
       alert(`unpublish failed: ${err}`);
     }
   }
 
-  async function leave(rtc: RTC) {
+  async function leave(rtc: RTC): Promise<void> {
     try {
       if (!rtc.client) {
         alert("Please join channel first")
@@ -237,7 +145,7 @@ function App({}: AppProps) {
         // removeRemoteView(remoteStream.getId());
       });
 
-      setRTC((rtc) => ({
+      setRtc((rtc) => ({
         ...rtc,
         localStream: null,
         remoteStreams: [],
@@ -251,9 +159,24 @@ function App({}: AppProps) {
     }
   }
 
-  async function join(rtc: RTC, opts: RTCOptions) {
+  function validate(data: any, fields: Array<string>): string | boolean {
+    for (const field of fields) {
+      if (data[field] === undefined || data[field] === '') {
+        return `${field} should not be empty`;
+      }
+    }
+    return false;
+  }
+
+  async function join(rtc: RTC, opts: RTCOptions): Promise<void> {
     if (rtc.joined) {
       alert('Already joined');
+      return;
+    }
+    const fields = ['appId', 'channel', 'token', 'uid', 'mode', 'codec', 'camera', 'mic', 'resolution'];
+    const msg = validate(opts, fields);
+    if (msg) {
+      alert(msg);
       return;
     }
 
@@ -278,7 +201,7 @@ function App({}: AppProps) {
                 type="text"
                 placeholder={APPID}
                 onChange={(e) => {
-                  setRTCOpts((rtcOpts) => ({
+                  setRtcOpts((rtcOpts) => ({
                     ...rtcOpts,
                     appId: e.currentTarget.value,
                   }));
@@ -291,7 +214,7 @@ function App({}: AppProps) {
                 type="text"
                 placeholder={CHANNEL}
                 onChange={(e) => {
-                  setRTCOpts((rtcOpts) => ({
+                  setRtcOpts((rtcOpts) => ({
                     ...rtcOpts,
                     channel: e.currentTarget.value,
                   }));
@@ -304,7 +227,7 @@ function App({}: AppProps) {
                 type="password"
                 placeholder={TEMP_TOKEN}
                 onChange={(e) => {
-                  setRTCOpts((rtcOpts) => ({
+                  setRtcOpts((rtcOpts) => ({
                     ...rtcOpts,
                     token: e.currentTarget.value,
                   }));
@@ -320,7 +243,7 @@ function App({}: AppProps) {
                 step="1"
                 value={rtcOpts.uid}
                 onChange={(e) =>
-                  setRTCOpts((rtcOpts) => ({
+                  setRtcOpts((rtcOpts) => ({
                     ...rtcOpts,
                     uid: Number(e.currentTarget.value),
                   }))
@@ -331,7 +254,7 @@ function App({}: AppProps) {
               <legend>Camera</legend>
               <select
                 onChange={(e) =>
-                  setRTCOpts((rtcOpts) => ({
+                  setRtcOpts((rtcOpts) => ({
                     ...rtcOpts,
                     camera: e.currentTarget.value,
                   }))
@@ -352,7 +275,7 @@ function App({}: AppProps) {
               <legend>Mic</legend>
               <select
                 onChange={(e) =>
-                  setRTCOpts((rtcOpts) => ({
+                  setRtcOpts((rtcOpts) => ({
                     ...rtcOpts,
                     mic: e.currentTarget.value,
                   }))
@@ -373,7 +296,7 @@ function App({}: AppProps) {
               <legend>Camera Resolution</legend>
               <select
                 onChange={(e) =>
-                  setRTCOpts((rtcOpts) => ({
+                  setRtcOpts((rtcOpts) => ({
                     ...rtcOpts,
                     resolution: e.currentTarget.value,
                   }))
@@ -400,7 +323,7 @@ function App({}: AppProps) {
                       id={name}
                       checked={checked}
                       onChange={(e) =>
-                        setRTCOpts((rtcOpts) => ({
+                        setRtcOpts((rtcOpts) => ({
                           ...rtcOpts,
                           mode: e.currentTarget.value,
                         }))
@@ -424,7 +347,7 @@ function App({}: AppProps) {
                       value={item.value}
                       id={name}
                       onChange={(e) =>
-                        setRTCOpts((rtcOpts) => ({
+                        setRtcOpts((rtcOpts) => ({
                           ...rtcOpts,
                           codec: e.currentTarget.value,
                         }))
