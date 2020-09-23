@@ -29,13 +29,7 @@ section {
   flex-direction: column;
 }
 
-article {
-  display: flex;
-  flex-direction: column;
-  height: 50%;
-}
-
-article .stream_wrapper {
+.stream_wrapper {
   height: 320px;
   width: 480px;
 }
